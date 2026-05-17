@@ -615,7 +615,7 @@ ${SUDO_CMD} tee "${PREFIX}/config/llamastack.conf" > /dev/null <<CONF
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 PREFIX="${PREFIX}"
-LLAMA_BIN="\${PREFIX}/bin/llama-server"
+LLAMA_BIN="${PREFIX}/bin/llama-server"
 MODEL_DIR="${PREFIX}/models"
 LOG_DIR="\${PREFIX}/logs"
 RUN_DIR="\${PREFIX}/run"
@@ -637,7 +637,7 @@ GEN_MODEL="${PREFIX}/models/gen-model.gguf"
 EMBED_MODEL="${PREFIX}/models/embed-model.gguf"
 
 # ── Generative server ─────────────────────────────────────────────────────────
-GEN_GPU_LAYERS=${GEN_LAYERS}        # 0 = CPU only, 999 = all layers on GPU
+GEN_GPU_LAYERS=${GEN_LAYERS}         # 0 = CPU only, 99 = all layers on GPU
 GEN_CTX_SIZE=${CTX}
 GEN_BATCH_SIZE=512
 GEN_UBATCH_SIZE=512
@@ -830,19 +830,18 @@ if [[ $PLATFORM == linux ]]; then
   CONF_FILE="${PREFIX}/config/llamastack.conf"
 
   for SVC in gen embed; do
-    [[ $SVC == gen ]]   && DESC="generative" || DESC="embedding"
+    [[ $SVC == gen ]] && DESC="generative" || DESC="embedding"
     cat > "/etc/systemd/system/llamastack-${SVC}.service" <<UNIT
 [Unit]
 Description=llamastack ${DESC} inference server
 After=network.target
-Documentation=file://${PREFIX}/docs/README.md
 
 [Service]
 Type=simple
 User=${SVC_USER}
 Group=${SVC_USER}
 EnvironmentFile=${CONF_FILE}
-ExecStartPre=/bin/bash -c 'source ${CONF_FILE}; MODEL=\${${SVC^^}_MODEL}; test -f "\$MODEL" || { echo "Model not found: \$MODEL — run: llamastack pull ${SVC} <alias>"; exit 1; }'
+ExecStartPre=${PREFIX}/bin/_check-${SVC}.sh
 ExecStart=${PREFIX}/bin/_start-${SVC}.sh
 Restart=always
 RestartSec=5
@@ -851,12 +850,9 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=llamastack-${SVC}
 
-# Security hardening
+# Security hardening (ProtectSystem omitted — models may live anywhere on disk)
 NoNewPrivileges=true
 PrivateTmp=true
-ProtectHome=true
-ProtectSystem=strict
-ReadWritePaths=${PREFIX}/logs ${PREFIX}/run
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
 LockPersonality=true
 
@@ -864,6 +860,28 @@ LockPersonality=true
 WantedBy=multi-user.target
 UNIT
   done
+
+  # Write ExecStartPre check scripts — one file per service, written directly
+  cat > "${PREFIX}/bin/_check-gen.sh" << 'GENCHECK'
+#!/usr/bin/env bash
+source LLAMASTACK_CONF_PATH
+[[ -f "${GEN_MODEL}" ]] || { echo "ERROR: GEN_MODEL not found: ${GEN_MODEL}"; echo "  Run: llamastack use gen /path/to/model.gguf"; exit 1; }
+echo "Model OK: ${GEN_MODEL}"
+GENCHECK
+  sed -i "s|LLAMASTACK_CONF_PATH|${CONF_FILE}|" "${PREFIX}/bin/_check-gen.sh"
+  chmod +x "${PREFIX}/bin/_check-gen.sh"
+
+  cat > "${PREFIX}/bin/_check-embed.sh" << 'EMBEDCHECK'
+#!/usr/bin/env bash
+source LLAMASTACK_CONF_PATH
+[[ -f "${EMBED_MODEL}" ]] || { echo "WARN: EMBED_MODEL not found: ${EMBED_MODEL} (embed server will be skipped)"; exit 0; }
+echo "Model OK: ${EMBED_MODEL}"
+EMBEDCHECK
+  sed -i "s|LLAMASTACK_CONF_PATH|${CONF_FILE}|" "${PREFIX}/bin/_check-embed.sh"
+  chmod +x "${PREFIX}/bin/_check-embed.sh"
+  log "Check scripts written"
+
+
 
   systemctl daemon-reload
   systemctl enable llamastack-gen llamastack-embed
