@@ -70,7 +70,7 @@ sudo ./install.sh
 ### Pre-built binary (recommended if you already compiled llama.cpp)
 
 ```bash
-sudo LLAMASTACK_PREBUILT=/path/to/llama.cpp/build ./install.sh
+sudo LLAMASTACK_PREBUILT=/projects/llamacppstack/llama.cpp/build ./install.sh
 ```
 
 Copies `llama-server` and all companion `.so` shared libraries, registers with
@@ -132,8 +132,8 @@ llamastack pull gen   granite4.1-8b
 llamastack pull embed nomic
 
 # Or point at a file already on disk
-llamastack use gen /path/to/<downloaded-model>.gguf
-llamastack use embed /path/to/<downloaded-embed-model>.gguf
+llamastack use gen /path/to/model.gguf
+llamastack use embed /path/to/embed-model.gguf
 ```
 
 > **Important — model file permissions:**  
@@ -550,10 +550,10 @@ sudo llamastack fix-models-dir
 
 ```bash
 # Find .so files in your build
-find //path/to -name "*.so*" 2>/dev/null | sort
+find /projects/llamacppstack -name "*.so*" 2>/dev/null | sort
 
 # Copy with archive mode (preserves symlinks)
-sudo cp -a /path/to/llama.cpp/build/bin/*.so* /opt/llamastack/bin/
+sudo cp -a /projects/llamacppstack/llama.cpp/build/bin/*.so* /opt/llamastack/bin/
 
 # Register
 echo "/opt/llamastack/bin" | sudo tee /etc/ld.so.conf.d/llamastack.conf
